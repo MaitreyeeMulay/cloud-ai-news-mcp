@@ -86,7 +86,10 @@ working. Wrong commands here cause wrong actions, so keep them up to date.
                  (uses `TABLE_NAME`). Tests run storage on both; DynamoDB is faked with moto.
 - Lint template: `cfn-lint template.yaml` (no AWS account or SAM CLI needed)
 - Build/deploy:  `sam build` then `sam deploy` (ask me before deploying; settings in
-                 samconfig.toml: eu-west-1, changeset confirmation on). SAM CLI is not installed yet.
+                 samconfig.toml: eu-west-1, changeset confirmation on). SAM CLI lives in `.sam-venv/`:
+                 `$env:SAM_CLI_TELEMETRY = "0"; .sam-venv\Scripts\sam build`
+- S3 lifecycle:  once, after the first deploy: `.\scripts\apply-sam-bucket-lifecycle.ps1`
+                 (applies `infra/sam-bucket-lifecycle.json` to SAM's managed upload bucket)
 
 
 ## Progress

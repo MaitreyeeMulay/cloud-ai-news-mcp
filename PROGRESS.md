@@ -1,8 +1,9 @@
 # Progress
 
-## Status (end of session 1, 2026-11-25)
+## Status (Sitting 4, 2026-11-25)
 **Built and tested locally, not deployed.** Nothing exists in AWS yet. `sam build` succeeds;
 the next step is `sam deploy --guided` (answers below), which needs the user's go-ahead.
+Then run the S3 lifecycle script once.
 
 ## Done
 - **Layout**: code shipped to Lambda lives in `app/`; `app/requirements.txt` holds runtime deps
@@ -33,7 +34,13 @@ the next step is `sam deploy --guided` (answers below), which needs the user's g
   (Query/PutItem/UpdateItem on the table, CreateLogStream/PutLogEvents on its log group);
   optional $1 budget alert if `AlertEmail` is given. `samconfig.toml`: region, stack name,
   changeset confirmation on.
-- **Checks**: 57 tests pass (storage tests on SQLite and moto-faked DynamoDB; Lambda handler
+- **S3 lifecycle rule** for SAM's managed upload bucket (lives in SAM's own stack
+  `aws-sam-cli-managed-default`, versioned, so it can't go in template.yaml):
+  `infra/sam-bucket-lifecycle.json` (uploads expire after 90 days, old versions and broken
+  uploads after 1 day, delete markers cleaned) + `scripts/apply-sam-bucket-lifecycle.ps1`
+  (finds the bucket, shows the current config, asks, applies, reads back). Shared by every SAM
+  project in eu-west-1; re-run if SAM ever recreates that stack.
+- **Checks**: 60 tests pass (storage tests on SQLite and moto-faked DynamoDB; Lambda handler
   test). `cfn-lint` and `sam validate --lint` pass. `sam build` succeeds: 2.7 MB, pure Python,
   imports with no other packages installed.
 - **Tooling**: SAM CLI 1.174.0 installed in `.sam-venv/` (git-ignored). Run with
@@ -55,15 +62,19 @@ the next step is `sam deploy --guided` (answers below), which needs the user's g
    creation **Y**, disable rollback **N**, save arguments **n** (keeps the email out of git).
    Approve the changeset only if it adds exactly: NewsTable, FetcherLogGroup, FetcherRole,
    FetcherFunction, FetcherFunctionEvery15Minutes, FetcherFunctionEvery15MinutesRole
-   (+ MonthlyBudget).
-2. After deploy: `aws lambda invoke --function-name cloud-ai-news-fetcher --region eu-west-1
+   (+ MonthlyBudget). SAM also creates its own stack `aws-sam-cli-managed-default` (the bucket).
+2. Right after the first deploy: `.\scripts\apply-sam-bucket-lifecycle.ps1` (once).
+3. After deploy: `aws lambda invoke --function-name cloud-ai-news-fetcher --region eu-west-1
    out.json`, then `aws logs tail /aws/lambda/cloud-ai-news-fetcher --region eu-west-1`.
    Check the Free Tier usage page a day later.
-3. Run server.py on AWS (Streamable HTTP + Lambda function URL) reading DynamoDB.
+4. Run server.py on AWS (Streamable HTTP + Lambda function URL) reading DynamoDB.
 
 ## Open problems
-- **Cost flags**: SAM's managed S3 bucket for the code zip isn't always-free (fractions of a cent
-  per month); add a lifecycle rule. DynamoDB free capacity is account-wide. First run may be
+- **Cost flags**: SAM's managed S3 bucket isn't always-free (fractions of a cent per month);
+  capped by the lifecycle rule once the script has run. DynamoDB free capacity is account-wide.
+- **Rollback risk from the 90-day rule**: if a deploy fails > 90 days after the previous one,
+  the old code zip is gone and the stack can end in UPDATE_ROLLBACK_FAILED; recover with
+  `aws cloudformation continue-update-rollback`. First run may be
   throttled at 1 WCU (time, not money).
 - If you ran `claude mcp add` before the `app/` move: `claude mcp remove cloud-ai-news`, then
   re-add with the path in CLAUDE.md (`app\server.py`).
