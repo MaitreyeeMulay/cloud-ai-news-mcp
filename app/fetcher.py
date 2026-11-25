@@ -1,6 +1,6 @@
 """Download all feeds at once and return the articles from the last 24 hours.
 
-Run directly to fetch and save into SQLite:  python fetcher.py
+Run directly to fetch and save into local storage:  python app/fetcher.py
 """
 
 import asyncio
@@ -9,7 +9,6 @@ import logging
 import re
 from calendar import timegm
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import feedparser
 import httpx
@@ -131,12 +130,14 @@ def fetch_recent(feeds: list[Feed] | None = None, now: datetime | None = None) -
     return asyncio.run(fetch_all(feeds if feeds is not None else load_feeds(), now))
 
 
-def run(db_path: Path = storage.DEFAULT_DB, feeds: list[Feed] | None = None,
-        now: datetime | None = None) -> storage.SaveResult:
-    """Fetch recent articles and save them as stories. Safe to run repeatedly."""
+def run(feeds: list[Feed] | None = None, now: datetime | None = None) -> storage.SaveResult:
+    """Fetch recent articles and save them as stories. Safe to run repeatedly.
+
+    Storage comes from the environment (STORAGE_BACKEND, NEWS_DB / TABLE_NAME).
+    """
     articles = fetch_recent(feeds, now)
-    with storage.connect(db_path) as conn:
-        return storage.save_articles(conn, articles, now)
+    with storage.connect() as store:
+        return store.save_articles(articles, now)
 
 
 if __name__ == "__main__":

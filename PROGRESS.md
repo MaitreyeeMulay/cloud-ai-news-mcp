@@ -1,57 +1,82 @@
 # Progress
 
-## Session 1: 2026-11-24/25
+## Status (end of session 1, 2026-11-25)
+**Built and tested locally, not deployed.** Nothing exists in AWS yet. `sam build` succeeds;
+the next step is `sam deploy --guided` (answers below), which needs the user's go-ahead.
 
-### Done
-- **feeds.json**: 13 sources, each tested live (4 cloud, 7 ai, 2 tech).
-  Categories are `cloud`, `ai`, `tech` (tech = Techmeme, Hacker News: general news).
-- **models.py**: `Feed`, `Article` (title, link, source, category, published UTC, summary), `Story`.
-- **feeds.py**: loads feeds.json and rejects unknown categories.
-- **fetcher.py**: fetches all feeds at once (10 s timeout each), logs and skips failed
-  feeds, keeps the last 24 h, cleans summaries to 300 chars. `python fetcher.py` fetches and
-  saves to SQLite.
-- **dedup.py**: same-story rules: same source never matches; more than 48 h apart never
-  matches; same normalised link matches; or ≥ 3 shared title keywords that make up ≥ 50% of
-  the shorter title's keywords. Uses stopwords, date removal and light stemming. No ML.
-- **storage.py**: SQLite `news.db` (git-ignored; set `NEWS_DB` to move it). Tables `stories`
-  and `story_sources`, primary key `(source, link_key)`, so re-running the fetcher adds no
-  duplicates.
-- **Tests**: 31 passing (`pytest`), no live calls. The 5 agreed headline pairs are in
-  `tests/pairs.py`.
-- Live check: 77 articles became 71 stories, 5 of them with 2+ sources; a second run added 0.
+## Done
+- **Layout**: code shipped to Lambda lives in `app/`; `app/requirements.txt` holds runtime deps
+  only (httpx, feedparser). Root `requirements.txt` has everything for local dev (incl. mcp,
+  boto3, moto, cfn-lint). `news.db` stays at the root so it is never packaged.
+- **app/feeds.json**: 13 sources, each tested live (4 cloud, 7 ai, 2 tech).
+- **app/fetcher.py**: fetches all feeds at once (10 s timeout each), logs and skips failed
+  feeds, keeps the last 24 h, cleans summaries. `python app/fetcher.py` fetches and saves.
+- **app/dedup.py**: same-story rules: same source never matches; > 48 h apart never matches;
+  same normalised link matches (tracking params dropped, real params like Azure `?id=` kept);
+  or ≥ 3 shared title keywords making up ≥ 50% of the shorter title's. No ML.
+- **Storage, two backends behind one interface** (`storage.connect()` → `Store` with
+  `save_articles` / `get_stories`), chosen by `STORAGE_BACKEND`:
+  - `sqlite` (default, local): `app/storage_sqlite.py`, file from `NEWS_DB` or `news.db`.
+    Schema v2 (text story ids); an older `news.db` gives a "delete and rebuild" error.
+  - `dynamodb` (Lambda): `app/storage_dynamodb.py`, table from `TABLE_NAME`. One table, no
+    indexes; articles under `ADAY#<date>`, stories under `SDAY#<date>`; reads are Query only;
+    TTL `expires_at` = 30 days.
+  - Matching logic lives once in `app/storage.py`. Re-runs add no duplicates on either backend.
+- **app/server.py** (MCP, stdio): tool `get_top_stories(count, hours, category)` (read-only;
+  "Full story" link prefers the original publisher over Techmeme/HN/Google News) and prompt
+  `reel_scripts(count=5)` (HOOK / WHAT HAPPENED / WHY IT MATTERS / CTA, max 75 spoken words,
+  "Unconfirmed:" for single-source stories, Tidal example script).
+- **app/lambda_handler.py**: runs fetch + save; boto3 retries throttling (1 WCU).
+- **template.yaml** (eu-west-1): DynamoDB PROVISIONED 1/1 RCU/WCU (Retain, TTL, no autoscaling/
+  GSI/streams/PITR); Lambda Python 3.12, 256 MB, 60 s, x86_64, not in a VPC; EventBridge
+  Scheduler `rate(15 minutes)`; log group with 7-day retention; explicit least-privilege role
+  (Query/PutItem/UpdateItem on the table, CreateLogStream/PutLogEvents on its log group);
+  optional $1 budget alert if `AlertEmail` is given. `samconfig.toml`: region, stack name,
+  changeset confirmation on.
+- **Checks**: 57 tests pass (storage tests on SQLite and moto-faked DynamoDB; Lambda handler
+  test). `cfn-lint` and `sam validate --lint` pass. `sam build` succeeds: 2.7 MB, pure Python,
+  imports with no other packages installed.
+- **Tooling**: SAM CLI 1.174.0 installed in `.sam-venv/` (git-ignored). Run with
+  `$env:SAM_CLI_TELEMETRY = "0"; .sam-venv\Scripts\sam ...`.
 
-### Decisions
-- **Stored, not live search**: a scheduled fetch writes to the DB and MCP tools only read.
-  Reasons: story counting needs history, cost is €0 whatever the traffic, fast replies,
-  less load on publishers. See the comparison at https://claude.ai/artifact/2cvKQniyppBmGSaHNfsuCn
-- **MCP SDK v2** (`from mcp.server.mcpserver import MCPServer`), because v2 renamed FastMCP.
-- **"Same event, different angle" stays separate** (e.g. different Jensen Huang stories):
-  avoiding wrong merges matters more than catching every match.
-- **NewsAPI left out**: its free plan is for development only.
+## Decisions
+- **Stored, not live search**: a scheduled fetch writes to storage; MCP tools only read.
+  Comparison: https://claude.ai/artifact/2cvKQniyppBmGSaHNfsuCn
+- **Fetch every 15 minutes** (user's choice; ~1,250 feed requests/day, still €0).
+- **MCP SDK v2** (`MCPServer`), because v2 renamed FastMCP.
+- **"Same event, different angle" stays separate**: no wrong merges beats catching every match.
+- **NewsAPI left out** (free plan is development-only). **Reddit on hold.**
 
-### Source workarounds (check these still work)
-- **Anthropic**: no official RSS; uses the third-party `Olshansk/rss-feeds` GitHub feed.
-  Fallback: the official `anthropic.com/sitemap.xml`.
-- **Meta AI**: `ai.meta.com` has no feed; uses Engineering at Meta, AI Research category.
-- **VentureBeat**: blocks automated readers (429); uses a Google News search feed. Links are
-  `news.google.com` redirects.
+## Next
+1. **Deploy** (needs approval). Before: `aws sts get-caller-identity` (right account?) and
+   Billing → Free Tier page (accounts created after 15 Jul 2025 have different terms).
+   Then `sam build` and `.sam-venv\Scripts\sam deploy --guided` with: stack `cloud-ai-news`,
+   region `eu-west-1`, AlertEmail = your email or empty, confirm changes **Y**, IAM role
+   creation **Y**, disable rollback **N**, save arguments **n** (keeps the email out of git).
+   Approve the changeset only if it adds exactly: NewsTable, FetcherLogGroup, FetcherRole,
+   FetcherFunction, FetcherFunctionEvery15Minutes, FetcherFunctionEvery15MinutesRole
+   (+ MonthlyBudget).
+2. After deploy: `aws lambda invoke --function-name cloud-ai-news-fetcher --region eu-west-1
+   out.json`, then `aws logs tail /aws/lambda/cloud-ai-news-fetcher --region eu-west-1`.
+   Check the Free Tier usage page a day later.
+3. Run server.py on AWS (Streamable HTTP + Lambda function URL) reading DynamoDB.
 
-### Next
-1. **server.py**: MCP tools that read from storage (e.g. top stories, search, list sources).
-   Add `mcp` to requirements.txt. Test with `npx @modelcontextprotocol/inspector python server.py`.
-2. Reel scripts: turn the top stories into 15–30 s scripts with a link to the full story.
-3. AWS: SAM template, Lambda + EventBridge Scheduler (fetch every 2 h), DynamoDB
-   (PROVISIONED 1 RCU/1 WCU, date-based key so searches use Query, not Scan), Streamable HTTP.
+## Open problems
+- **Cost flags**: SAM's managed S3 bucket for the code zip isn't always-free (fractions of a cent
+  per month); add a lifecycle rule. DynamoDB free capacity is account-wide. First run may be
+  throttled at 1 WCU (time, not money).
+- If you ran `claude mcp add` before the `app/` move: `claude mcp remove cloud-ai-news`, then
+  re-add with the path in CLAUDE.md (`app\server.py`).
+- **Reddit (r/aws, r/LocalLLaMA)**: needs a Reddit API app (OAuth). On AWS use SSM Parameter
+  Store (free), not Secrets Manager (~$0.40/secret/month).
+- **Aggregators**: Hacker News and Techmeme often just link to the original, inflating counts.
+- **Google News redirect links** (VentureBeat): resolve to the real URL.
+- **Story titles** keep prefixes like "Sources: …"; clean before reels.
+- DynamoDB edge case: if a feed changes an article's date to another day, the article could be
+  stored twice (its key includes the date). SQLite isn't affected.
+- An article matching two stored stories joins the better one; the stories aren't merged.
 
-### Open problems
-- **Reddit (r/aws, r/LocalLLaMA) on hold**: needs a Reddit API app (OAuth). On AWS, store
-  the keys in SSM Parameter Store (free), not Secrets Manager (about $0.40 per secret per month).
-- **Are aggregators independent?** Hacker News and Techmeme often just link to the original,
-  which inflates source counts (e.g. GPT-6: OpenAI plus 2 aggregators).
-- **Google News redirect links** (VentureBeat): resolve them to the real URL for reel links
-  and better link matching.
-- **Story titles** come from the first article and can keep prefixes such as "Sources: …".
-  Clean them before writing reel scripts.
-- If a new article matches two stored stories, it joins the better match; the two stories
-  are not merged.
-- The VS Code warning about `feedparser` goes away once the interpreter is set to `.venv`.
+## Source workarounds (check these still work)
+- **Anthropic**: third-party `Olshansk/rss-feeds` GitHub feed; fallback `anthropic.com/sitemap.xml`.
+- **Meta AI**: Engineering at Meta, AI Research category (`ai.meta.com` has no feed).
+- **VentureBeat**: Google News search feed (VentureBeat returns 429 to automated readers).

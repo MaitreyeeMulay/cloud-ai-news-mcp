@@ -1,7 +1,18 @@
-# Runtime: download feeds (httpx) and parse RSS/Atom (feedparser)
-httpx==0.28.1
-feedparser==6.0.14
+# Local development: everything. The Lambda only gets app/requirements.txt.
 
-# Tests: test runner (pytest) and fake HTTP responses (respx)
+# Runtime (same as the Lambda): download feeds (httpx) and parse RSS/Atom (feedparser)
+-r app/requirements.txt
+
+# MCP server SDK (v2: MCPServer, formerly FastMCP); runs locally, not in the fetcher Lambda
+mcp==2.3.0
+
+# AWS SDK, for the DynamoDB backend (the Lambda runtime provides its own copy)
+boto3==1.44.11
+
+# Tests: test runner, fake HTTP (respx), fake AWS (moto)
 pytest==9.2.0
 respx==0.23.1
+moto[dynamodb]==5.2.6
+
+# Checks template.yaml (including SAM syntax) without the SAM CLI or an AWS account
+cfn-lint==1.61.0

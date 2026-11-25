@@ -33,7 +33,7 @@ class Article:
 class Story:
     """One story, reported by one or more sources (see dedup.py for the matching rules)."""
 
-    id: int
+    id: str
     title: str
     summary: str
     category: Category

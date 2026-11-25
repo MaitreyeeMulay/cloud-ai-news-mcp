@@ -1,0 +1,4 @@
+# Packaged into the Lambda by `sam build`. Runtime only: keep this small.
+# boto3 is not listed: the Lambda Python 3.12 runtime already includes it.
+httpx==0.28.1
+feedparser==6.0.14

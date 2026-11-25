@@ -1,0 +1,17 @@
+# SAM CLI settings, used by `sam build` / `sam deploy`. Contains no secrets or account IDs.
+# Don't let `sam deploy --guided` save AlertEmail here: pass it on the command line.
+version = 0.1
+
+[default.global.parameters]
+stack_name = "cloud-ai-news"
+region = "eu-west-1"
+
+[default.build.parameters]
+cached = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+# Show the changeset and wait for "y" before changing anything in AWS.
+confirm_changeset = true
+# SAM's managed S3 bucket for the code zip (a few MB; S3 isn't always-free, see PROGRESS.md).
+resolve_s3 = true

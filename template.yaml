@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Cloud + AI news fetcher. EventBridge Scheduler runs a Lambda every 15 minutes that
+  fetches feeds, de-duplicates stories and stores them in DynamoDB. Designed to stay
+  inside the AWS always-free tier (see PROGRESS.md for the cost check).
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: >
+      Optional. Email for a $1/month budget alert. Leave empty to skip the budget.
+      Pass it at deploy time; never commit it to samconfig.toml.
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+
+Resources:
+  # --- Storage ---------------------------------------------------------------
+  # PROVISIONED 1 RCU / 1 WCU is inside the always-free 25 RCU / 25 WCU.
+  # Deliberately absent (each could cost money): on-demand billing, auto scaling,
+  # global secondary indexes, streams, point-in-time recovery.
+  NewsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain          # deleting the stack keeps the data
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      # Items carry expires_at (Unix seconds, 30 days ahead); TTL deletes are free.
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  # --- Logs ------------------------------------------------------------------
+  # Created here (not by Lambda) so retention is 7 days instead of "never expire".
+  FetcherLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-fetcher
+      RetentionInDays: 7
+
+  # --- Permissions (least privilege) ----------------------------------------
+  # An explicit role instead of SAM's default, which would add the managed
+  # AWSLambdaBasicExecutionRole (log actions on every log group in the account).
+  FetcherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: fetcher-least-privilege
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Exactly the calls in app/storage_dynamodb.py: no Scan, Delete or Batch*.
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt NewsTable.Arn
+              # Write logs to this function's log group only (the group already exists).
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt FetcherLogGroup.Arn
+
+  # --- The fetcher Lambda ----------------------------------------------------
+  # Not in a VPC: a VPC would need a NAT Gateway (~30+ EUR/month) to reach the feeds.
+  FetcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-fetcher
+      Description: Fetch feeds, de-duplicate stories, save to DynamoDB
+      CodeUri: app/
+      Handler: lambda_handler.handler
+      Runtime: python3.12
+      Architectures:
+        - x86_64
+      MemorySize: 256
+      Timeout: 60
+      Role: !GetAtt FetcherRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref FetcherLogGroup
+      Environment:
+        Variables:
+          STORAGE_BACKEND: dynamodb
+          TABLE_NAME: !Ref NewsTable
+      Events:
+        # EventBridge Scheduler. SAM creates its invoke role, limited to this function.
+        Every15Minutes:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: rate(15 minutes)
+
+  # --- Optional cost alarm ---------------------------------------------------
+  # The first two AWS budgets are free. Emails at 50% of $1 actual and 100% forecast.
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Condition: HasAlertEmail
+    Properties:
+      Budget:
+        BudgetName: !Sub ${AWS::StackName}-monthly
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: 1
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 50
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+Outputs:
+  TableName:
+    Description: DynamoDB table holding stories and articles
+    Value: !Ref NewsTable
+  FetcherFunctionName:
+    Description: Lambda run every 15 minutes
+    Value: !Ref FetcherFunction
+  LogGroup:
+    Description: Fetcher logs (kept 7 days)
+    Value: !Ref FetcherLogGroup

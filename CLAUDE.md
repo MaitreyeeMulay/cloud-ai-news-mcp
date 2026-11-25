@@ -67,10 +67,26 @@ working. Wrong commands here cause wrong actions, so keep them up to date.
 -->
 - Set up:        `python -m venv .venv` then `.venv\Scripts\activate` (Windows)
                  then `pip install -r requirements.txt`
-- Run fetcher:   `python fetcher.py`
-- Run tests:     `pytest`
-- Test server:   `npx @modelcontextprotocol/inspector python server.py`
-- Build/deploy:  `sam build` then `sam deploy` (ask me before deploying)
+- Commands below assume the venv is active; otherwise use `.venv\Scripts\python`.
+- Layout:        code shipped to Lambda lives in `app/` (runtime deps: `app/requirements.txt`);
+                 root `requirements.txt` = everything for local dev. `news.db` stays at the root.
+- Run fetcher:   `python app/fetcher.py` (fetches feeds and saves stories to news.db)
+- Run server:    `python app/server.py` (stdio; read-only on news.db, so run the fetcher first)
+- Run tests:     `pytest`; one file: `pytest tests/test_server.py`;
+                 one test: `pytest tests/test_dedup.py::test_normalise_link_drops_tracking_but_keeps_real_params`
+- Test server:   `npx @modelcontextprotocol/inspector python app/server.py` (browser UI)
+- Test server (CLI, no browser), e.g.:
+                 `npx @modelcontextprotocol/inspector --cli python app/server.py --method tools/list`
+                 `... --method tools/call --tool-name get_top_stories --tool-arg count=2`
+                 `... --method prompts/get --prompt-name reel_scripts --prompt-args count=3`
+- Add to Claude Code (local scope, absolute paths):
+                 `claude mcp add cloud-ai-news -- "E:\Portfolio\MCP\cloud-ai-news-mcp\.venv\Scripts\python.exe" "E:\Portfolio\MCP\cloud-ai-news-mcp\app\server.py"`
+                 then check with `claude mcp list`; the prompt runs as `/mcp__cloud-ai-news__reel_scripts 3`
+- Storage:       `STORAGE_BACKEND=sqlite` (default, uses `NEWS_DB` or news.db) or `dynamodb`
+                 (uses `TABLE_NAME`). Tests run storage on both; DynamoDB is faked with moto.
+- Lint template: `cfn-lint template.yaml` (no AWS account or SAM CLI needed)
+- Build/deploy:  `sam build` then `sam deploy` (ask me before deploying; settings in
+                 samconfig.toml: eu-west-1, changeset confirmation on). SAM CLI is not installed yet.
 
 
 ## Progress
