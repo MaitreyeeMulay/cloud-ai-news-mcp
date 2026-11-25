@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Atom sample in the style of The Verge. Tests pin "now" to 2026-11-25 12:00 UTC. -->
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Sample AI Feed</title>
+  <id>https://example.org/</id>
+  <updated>2026-11-25T05:30:00-05:00</updated>
+
+  <!-- Recent, -05:00 offset: kept, and must become 10:30 UTC -->
+  <entry>
+    <title>New open-weights model tops coding benchmark</title>
+    <link rel="alternate" href="https://example.org/open-weights-model"/>
+    <id>https://example.org/open-weights-model</id>
+    <published>2026-11-25T05:30:00-05:00</published>
+    <updated>2026-11-25T05:30:00-05:00</updated>
+  </entry>
+
+  <!-- Two days old: dropped -->
+  <entry>
+    <title>Older AI story</title>
+    <link rel="alternate" href="https://example.org/older"/>
+    <id>https://example.org/older</id>
+    <published>2026-11-23T08:00:00Z</published>
+    <updated>2026-11-23T08:00:00Z</updated>
+  </entry>
+</feed>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- RSS 2.0 sample in the style of AWS What's New. Tests pin "now" to 2026-11-25 12:00 UTC. -->
+<rss version="2.0">
+  <channel>
+    <title>Sample Cloud Feed</title>
+    <link>https://example.com/</link>
+    <description>Sample feed for tests</description>
+
+    <!-- Recent, GMT date: kept -->
+    <item>
+      <title>Amazon Bedrock adds new agent tools</title>
+      <link>https://example.com/bedrock-agent-tools</link>
+      <pubDate>Wed, 25 Nov 2026 09:00:00 GMT</pubDate>
+    </item>
+
+    <!-- Recent, +01:00 offset: kept, and must become 07:00 UTC -->
+    <item>
+      <title>  Amazon S3 lowers request pricing  </title>
+      <link>https://example.com/s3-pricing</link>
+      <pubDate>Wed, 25 Nov 2026 08:00:00 +0100</pubDate>
+    </item>
+
+    <!-- Five days old: dropped -->
+    <item>
+      <title>Old announcement</title>
+      <link>https://example.com/old</link>
+      <pubDate>Fri, 20 Nov 2026 10:00:00 GMT</pubDate>
+    </item>
+
+    <!-- No date: dropped -->
+    <item>
+      <title>Undated post</title>
+      <link>https://example.com/undated</link>
+    </item>
+
+    <!-- No link: dropped -->
+    <item>
+      <title>Post without a link</title>
+      <pubDate>Wed, 25 Nov 2026 10:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

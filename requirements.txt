@@ -1,0 +1,7 @@
+# Runtime: download feeds (httpx) and parse RSS/Atom (feedparser)
+httpx==0.28.1
+feedparser==6.0.14
+
+# Tests: test runner (pytest) and fake HTTP responses (respx)
+pytest==9.2.0
+respx==0.23.1
